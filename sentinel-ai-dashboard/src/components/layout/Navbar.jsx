@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, Sparkles } from 'lucide-react';
+import { Cpu, Sparkles, LayoutDashboard } from 'lucide-react';
 
 const stages = [
   { key: 'landing', label: 'Landing' },
@@ -114,6 +114,21 @@ const Navbar = ({ currentSection, onNavigate, completedSections = ['landing'] })
             <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
             <span className="text-[9px] font-mono text-text-dim tracking-wider select-none">SYSTEM ONLINE</span>
           </div>
+
+          {/* Dashboard Button */}
+          <button
+            onClick={() => onNavigate('userDashboard')}
+            className={`
+              relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono text-2xs tracking-wider font-bold transition-all duration-300 cursor-pointer
+              ${currentSection === 'userDashboard'
+                ? 'bg-accent-cyan text-black border-accent-cyan shadow-glowCyan'
+                : 'bg-bg-panel border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 hover:border-accent-cyan'
+              }
+            `}
+          >
+            <LayoutDashboard className="w-3 h-3" />
+            <span>DASHBOARD</span>
+          </button>
 
           {/* Future Vision Button */}
           <button

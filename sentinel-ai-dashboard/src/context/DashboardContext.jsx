@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 
 // Vulnerability data shared across the app
 export const vulnerabilitiesData = [
@@ -54,6 +54,7 @@ export const sections = {
   VERIFICATION: 'verification',
   FORENSIC_REPORT: 'forensicReport',
   FUTURE_VISION: 'futureVision',
+  USER_DASHBOARD: 'userDashboard',
 };
 
 const DashboardContext = createContext(null);
@@ -84,6 +85,16 @@ export const DashboardProvider = ({ children }) => {
   const [deploymentLink, setDeploymentLink] = useState('');
   const [scanProfile, setScanProfile] = useState('standard');
 
+  // Scan history — persisted to localStorage
+  const [scanHistory, setScanHistory] = useState(() => {
+    try {
+      const stored = localStorage.getItem('sentinel_scan_history');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Navigation functions
   const goToSection = useCallback((sectionName) => {
     if (Object.values(sections).includes(sectionName)) {
@@ -101,6 +112,131 @@ export const DashboardProvider = ({ children }) => {
     setResolvedCount(4);
   }, []);
 
+  // Persist scanHistory whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('sentinel_scan_history', JSON.stringify(scanHistory));
+    } catch {
+      // storage quota exceeded — silently ignore
+    }
+  }, [scanHistory]);
+
+  // Load scan history from MongoDB with localStorage fallback
+  const loadScanHistory = useCallback(async () => {
+    try {
+      const response = await fetch('http://localhost:8002/history/default_user');
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+      const data = await response.json();
+      if (data && data.success && Array.isArray(data.scans)) {
+        // Map from snake_case database schema back to camelCase frontend model
+        const mappedScans = data.scans.map(scan => ({
+          id: scan.scan_id,
+          domain: scan.domain,
+          deploymentUrl: scan.deployment_url,
+          scannedAt: scan.scanned_at,
+          highestSeverity: scan.highest_severity,
+          totalVulnerabilities: scan.total_vulnerabilities,
+          resolvedVulnerabilities: scan.resolved_vulnerabilities,
+          scoreBefore: scan.score_before,
+          scoreAfter: scan.score_after,
+          status: scan.status,
+          findings: scan.findings || [],
+          analysis: scan.analysis || [],
+        }));
+        setScanHistory(mappedScans);
+        console.log('Successfully loaded scan history from MongoDB:', mappedScans.length);
+      }
+    } catch (err) {
+      console.error('Failed to load scan history from MongoDB, using localStorage fallback:', err);
+    }
+  }, []);
+
+  // Fetch history on initial load
+  useEffect(() => {
+    loadScanHistory();
+  }, [loadScanHistory]);
+
+  // Save the current completed scan to history
+  const saveScanToHistory = useCallback(async () => {
+    // Derive highest severity from scanData findings
+    const findingsList = scanData?.findings || scanData?.originalFindings || [];
+    const severityOrder = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+    const highestSeverity = findingsList.reduce((max, f) => {
+      const sev = (f.severity || '').toUpperCase();
+      return (severityOrder[sev] || 0) > (severityOrder[max] || 0) ? sev : max;
+    }, 'LOW');
+
+    const entry = {
+      id: 'SNT-' + Date.now(),
+      domain: targetDomain || 'Unknown',
+      deploymentUrl: deploymentLink || '',
+      scannedAt: new Date().toISOString(),
+      highestSeverity,
+      totalVulnerabilities: scanData?.total_findings ?? findingsList.length,
+      resolvedVulnerabilities: resolvedCount,
+      scoreBefore: securityScore.before,
+      scoreAfter: securityScore.after,
+      status: 'completed',
+      findings: findingsList,
+      analysis: aiAnalysis?.analysis || [],
+    };
+
+    // Optimistically update React state (will automatically sync to localStorage via useEffect)
+    setScanHistory(prev => [...prev, entry]);
+
+    // Send POST request to MongoDB backend
+    try {
+      const payload = {
+        scan_id: entry.id,
+        user_id: 'default_user',
+        domain: entry.domain,
+        deployment_url: entry.deploymentUrl,
+        scanned_at: entry.scannedAt,
+        highest_severity: entry.highestSeverity,
+        total_vulnerabilities: entry.totalVulnerabilities,
+        resolved_vulnerabilities: entry.resolvedVulnerabilities,
+        score_before: entry.scoreBefore,
+        score_after: entry.scoreAfter,
+        status: entry.status,
+        findings: entry.findings.map(f => ({
+          id: f.id,
+          title: f.title,
+          severity: f.severity || 'LOW',
+          description: f.description,
+          evidence: f.evidence,
+          location: f.location,
+        })),
+        analysis: Array.isArray(entry.analysis) ? entry.analysis.map(a => ({
+          id: a.id,
+          title: a.title,
+          severity: a.severity,
+          explanation: a.explanation,
+          impact: a.impact,
+          recommended_fix: a.recommended_fix || a.fix || a.recommendedFix,
+          code_snippet: a.code_snippet || a.codeSnippet,
+          confidence: a.confidence,
+        })) : [],
+      };
+
+      const response = await fetch('http://localhost:8002/history/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+      console.log('Successfully saved scan history to MongoDB');
+    } catch (err) {
+      console.error('Failed to save scan history to MongoDB, local fallback active:', err);
+    }
+  }, [scanData, targetDomain, deploymentLink, resolvedCount, securityScore, aiAnalysis]);
+
   const resetApp = useCallback(() => {
     setCurrentSection(sections.LANDING);
     setResolvedCount(0);
@@ -115,6 +251,7 @@ export const DashboardProvider = ({ children }) => {
     setTargetDomain('');
     setDeploymentLink('');
     setScanProfile('standard');
+    // Note: scanHistory is intentionally NOT cleared on reset — it persists across sessions
   }, []);
 
   const value = {
@@ -158,6 +295,12 @@ export const DashboardProvider = ({ children }) => {
     setDeploymentLink,
     scanProfile,
     setScanProfile,
+
+    // Scan History
+    scanHistory,
+    setScanHistory,
+    saveScanToHistory,
+    loadScanHistory,
 
     // Actions
     markRemediationComplete,

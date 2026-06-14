@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDashboard, sections } from './context/DashboardContext';
-import { Shield, Home, Activity, Brain, Wrench, CheckCircle, FileText, Cpu } from 'lucide-react';
+import { Shield, Home, Activity, Brain, Wrench, CheckCircle, FileText, Cpu, LayoutDashboard } from 'lucide-react';
+import Navbar from './components/layout/Navbar';
 
 // Import Entry Screen
 import EntryScreen from './components/EntryScreen';
@@ -15,6 +16,7 @@ import Remediation from './sections/Remediation/Remediation';
 import Verification from './sections/Verification/Verification';
 import ForensicReport from './sections/ForensicReport/ForensicReport';
 import FutureVision from './sections/FutureVision/FutureVision';
+import UserDashboard from './sections/UserDashboard/UserDashboard';
 
 // Page transition variants
 const pageVariants = {
@@ -103,6 +105,13 @@ function App() {
         return <ForensicReport />;
       case sections.FUTURE_VISION:
         return <FutureVision />;
+      case sections.USER_DASHBOARD:
+        return (
+          <UserDashboard
+            onNewScan={() => goToSection(sections.LANDING)}
+            onFutureVision={() => goToSection(sections.FUTURE_VISION)}
+          />
+        );
       default:
         return <Landing onBegin={handleLandingBegin} />;
     }
@@ -121,6 +130,7 @@ function App() {
       { name: 'Verify', section: sections.VERIFICATION, icon: CheckCircle },
       { name: 'Report', section: sections.FORENSIC_REPORT, icon: FileText },
       { name: 'Future', section: sections.FUTURE_VISION, icon: Cpu },
+      { name: 'Dashboard', section: sections.USER_DASHBOARD, icon: LayoutDashboard },
     ];
 
     return (
@@ -167,6 +177,13 @@ function App() {
       {/* Main App Content - Only shown after entry screen closes */}
       {!showEntry && (
         <div className="relative z-10 flex flex-col min-h-screen">
+          {/* Navbar - always visible */}
+          <Navbar
+            currentSection={currentSection}
+            onNavigate={goToSection}
+            completedSections={Object.values(sections)}
+          />
+
           {/* Main Content */}
           <main className="flex-1 w-full mx-auto">
             <AnimatePresence mode="wait">
